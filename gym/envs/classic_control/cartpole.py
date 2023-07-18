@@ -125,7 +125,9 @@ class CartPoleEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
         self.isopen = True
         self.state = None
 
-        self.steps_beyond_terminated = None
+        #Modified code so that terminated only is true
+        # if position goes out of range.
+        self.steps_beyond_terminable_by_theta = 0 
 
     def step(self, action):
         err_msg = f"{action!r} ({type(action)}) invalid"
@@ -158,34 +160,43 @@ class CartPoleEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             theta = theta + self.tau * theta_dot
 
         self.state = (x, x_dot, theta, theta_dot)
-
-        terminated = bool(
-            x < -self.x_threshold
-            or x > self.x_threshold
-            or theta < -self.theta_threshold_radians
-            or theta > self.theta_threshold_radians
+        
+        terminable_by_position = bool(
+            (x < -self.x_threshold)
+            or (x > self.x_threshold)
         )
 
-        if not terminated:
-            reward = 1.0
-        elif self.steps_beyond_terminated is None:
-            # Pole just fell!
-            self.steps_beyond_terminated = 0
-            reward = 1.0
-        else:
-            if self.steps_beyond_terminated == 0:
+        casted_theta = theta % (2 * math.pi)
+
+        terminable_by_theta = bool(
+            (casted_theta < -self.theta_threshold_radians)
+            or (casted_theta > self.theta_threshold_radians)
+        )
+
+        reward = int(
+            (not terminable_by_theta) and
+            (not terminable_by_position)
+        )
+
+        if ((self.steps_beyond_terminable_by_theta == 0) and (reward == 0)):
+                logger.info(
+                    "Terminal behavior overriden. "
+                    "Terminated will now only return true if position goes out of range."
+                    "Please use a timestep limit to end episodes."
+                )
                 logger.warn(
                     "You are calling 'step()' even though this "
                     "environment has already returned terminated = True. You "
                     "should always call 'reset()' once you receive 'terminated = "
                     "True' -- any further steps are undefined behavior."
                 )
-            self.steps_beyond_terminated += 1
-            reward = 0.0
+        else:
+            self.steps_beyond_terminable_by_theta += 1
 
         if self.render_mode == "human":
             self.render()
-        return np.array(self.state, dtype=np.float32), reward, terminated, False, {}
+
+        return np.array(self.state, dtype=np.float32), reward, terminable_by_position, False, {}
 
     def reset(
         self,
@@ -200,7 +211,7 @@ class CartPoleEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
             options, -0.05, 0.05  # default low
         )  # default high
         self.state = self.np_random.uniform(low=low, high=high, size=(4,))
-        self.steps_beyond_terminated = None
+        self.steps_beyond_terminable_by_theta = 0
 
         if self.render_mode == "human":
             self.render()
